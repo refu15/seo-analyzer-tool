@@ -16,6 +16,10 @@ app = FastAPI(
 
 # Configure CORS
 # Get allowed origins from settings
+import os
+print(f"DEBUG: Environment variable ALLOWED_ORIGINS = {os.getenv('ALLOWED_ORIGINS')}")  # Debug log
+print(f"DEBUG: All environment variables: {list(os.environ.keys())}")  # Show all env vars
+
 allowed_origins = settings.get_allowed_origins()
 print(f"DEBUG: Allowed origins: {allowed_origins}")  # Debug log
 
