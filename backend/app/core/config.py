@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import List
+import os
 
 
 class Settings(BaseSettings):
@@ -29,16 +30,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # CORS - Will be split by comma if provided as string
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80"
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80")
 
     class Config:
         case_sensitive = True
 
     def get_allowed_origins(self) -> List[str]:
         """Parse ALLOWED_ORIGINS into a list"""
-        if isinstance(self.ALLOWED_ORIGINS, str):
-            return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',')]
-        return self.ALLOWED_ORIGINS
+        # Force read from environment variable
+        origins = os.getenv("ALLOWED_ORIGINS", self.ALLOWED_ORIGINS)
+        if isinstance(origins, str):
+            return [origin.strip() for origin in origins.split(',')]
+        return origins
 
 
 settings = Settings()
