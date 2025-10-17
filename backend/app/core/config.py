@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80"
 
     class Config:
-        env_file = ".env"
         case_sensitive = True
 
     def get_allowed_origins(self) -> List[str]:
