@@ -5,6 +5,7 @@ import ScoreCard from '../components/ScoreCard'
 import ScoreBreakdown from '../components/ScoreBreakdown'
 import LLMAnalysisSection from '../components/LLMAnalysisSection'
 import ActionPlan from '../components/ActionPlan'
+import AnalysisProgress from '../components/AnalysisProgress'
 import { Play, ArrowLeft, AlertCircle, TrendingUp, CheckCircle, Clock, Code, FileText, Eye, Award, Info } from 'lucide-react'
 
 export default function SiteDetail() {
@@ -47,14 +48,23 @@ export default function SiteDetail() {
 
     try {
       await analysisApi.runAnalysis(siteId)
-      // Refresh data
-      await fetchSiteData()
+      // Progress component will handle the rest
     } catch (err) {
-      setError(err.response?.data?.detail || '分析に失敗しました')
+      setError(err.response?.data?.detail || '分析の開始に失敗しました')
       console.error(err)
-    } finally {
       setAnalyzing(false)
     }
+  }
+
+  const handleAnalysisComplete = async (analysisId) => {
+    // Refresh data when analysis completes
+    await fetchSiteData()
+    setAnalyzing(false)
+  }
+
+  const handleAnalysisError = (errorMessage) => {
+    setError(errorMessage)
+    setAnalyzing(false)
   }
 
   const getPriorityColor = (priority) => {
@@ -138,12 +148,12 @@ export default function SiteDetail() {
       )}
 
       {analyzing && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex items-start">
-          <Clock className="h-5 w-5 text-blue-400 mr-3 mt-0.5 animate-spin" />
-          <div>
-            <h3 className="text-sm font-medium text-blue-800">分析中</h3>
-            <p className="mt-1 text-sm text-blue-700">SEO分析を実行しています。しばらくお待ちください...</p>
-          </div>
+        <div className="mb-6">
+          <AnalysisProgress
+            siteId={siteId}
+            onComplete={handleAnalysisComplete}
+            onError={handleAnalysisError}
+          />
         </div>
       )}
 

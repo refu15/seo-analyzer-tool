@@ -23,6 +23,7 @@ class SEOAnalyzer:
         }
         self.use_llm = use_llm
         self.llm_analyzer = None
+        self.progress_callback = None
 
         if use_llm:
             try:
@@ -31,6 +32,15 @@ class SEOAnalyzer:
             except Exception as e:
                 print(f"LLM Analyzer initialization failed: {str(e)}")
                 self.use_llm = False
+
+    def set_progress_callback(self, callback):
+        """Set a callback function to report progress"""
+        self.progress_callback = callback
+
+    def _report_progress(self, step: str, percentage: int):
+        """Report progress if callback is set"""
+        if self.progress_callback:
+            self.progress_callback(step, percentage)
 
     def analyze_site(self, url: str) -> Dict:
         """
@@ -41,24 +51,40 @@ class SEOAnalyzer:
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
 
-        # Fetch page content
+        # Step 1: Fetch page content (0-15%)
+        self._report_progress("ページコンテンツを取得中...", 0)
         try:
             response = requests.get(url, timeout=10, headers={
                 'User-Agent': 'Mozilla/5.0 (SEO Analyzer Bot)'
             })
             html_content = response.text
             soup = BeautifulSoup(html_content, 'lxml')
+            self._report_progress("ページコンテンツの取得完了", 15)
         except Exception as e:
             return {
                 "error": f"Failed to fetch URL: {str(e)}",
                 "total_score": 0
             }
 
-        # Calculate category scores
+        # Step 2: Calculate technical score (15-35%)
+        self._report_progress("技術的SEOを分析中...", 15)
         technical_score = self._calculate_technical_score(url, response, soup)
+        self._report_progress("技術的SEO分析完了", 35)
+
+        # Step 3: Calculate content score (35-50%)
+        self._report_progress("コンテンツ品質を分析中...", 35)
         content_score = self._calculate_content_score(soup)
+        self._report_progress("コンテンツ分析完了", 50)
+
+        # Step 4: Calculate UX score (50-65%)
+        self._report_progress("ユーザー体験を分析中...", 50)
         ux_score = self._calculate_ux_score(soup)
+        self._report_progress("UX分析完了", 65)
+
+        # Step 5: Calculate authority score (65-75%)
+        self._report_progress("権威性を分析中...", 65)
         authority_score = self._calculate_authority_score(soup)
+        self._report_progress("権威性分析完了", 75)
 
         # Calculate total score
         total_score = (
@@ -120,21 +146,31 @@ class SEOAnalyzer:
                 page_text = soup.get_text()
                 domain = urlparse(url).netloc
 
-                # Run parallel LLM analyses
+                # Step 6: LLM Technical Analysis (75-80%)
+                self._report_progress("AI技術分析を実行中...", 75)
                 result["llm_technical_analysis"] = self.llm_analyzer.analyze_technical_seo(
                     technical_details, html_snippet, url
                 )
+
+                # Step 7: LLM Content Analysis (80-85%)
+                self._report_progress("AIコンテンツ分析を実行中...", 80)
                 result["llm_content_analysis"] = self.llm_analyzer.analyze_content_seo(
                     content_details, page_text, url,
                     content_details.get("meta_title"),
                     content_details.get("meta_description")
                 )
+
+                # Step 8: LLM UX and Authority Analysis (85-90%)
+                self._report_progress("AIUX・権威性分析を実行中...", 85)
                 result["llm_ux_analysis"] = self.llm_analyzer.analyze_ux_seo(
                     ux_details, html_snippet, url
                 )
                 result["llm_authority_analysis"] = self.llm_analyzer.analyze_authority_seo(
                     html_snippet, url, domain
                 )
+
+                # Step 9: Generate Action Plan (90-100%)
+                self._report_progress("アクションプランを生成中...", 90)
                 result["llm_action_plan"] = self.llm_analyzer.generate_action_plan(
                     {
                         "technical": result.get("llm_technical_analysis"),
@@ -145,9 +181,13 @@ class SEOAnalyzer:
                     url,
                     total_score
                 )
+                self._report_progress("分析完了", 100)
             except Exception as e:
                 print(f"LLM analysis error: {str(e)}")
                 result["llm_analysis_error"] = str(e)
+                self._report_progress("分析完了（AI分析エラー）", 100)
+        else:
+            self._report_progress("分析完了", 100)
 
         return result
 

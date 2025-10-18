@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 from pydantic import BaseModel
 from datetime import datetime
+import threading
 
 from ..core.database import get_db
-from ..models.site import Site, Analysis, Keyword
+from ..models.site import Site, Analysis, Keyword, AnalysisProgress
 from ..services.seo_analyzer import SEOAnalyzer
 from ..services.pagespeed_service import PageSpeedService
 
@@ -50,80 +51,175 @@ class DetailedAnalysisResponse(BaseModel):
     llm_action_plan: Optional[Dict] = None
 
 
-@router.post("/{site_id}")
+class ProgressResponse(BaseModel):
+    id: int
+    site_id: int
+    status: str
+    current_step: Optional[str] = None
+    progress_percentage: int
+    analysis_id: Optional[int] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+def run_analysis_in_thread(site_id: int, site_url: str, progress_id: int):
+    """Run analysis in a separate thread with progress tracking"""
+    from ..core.database import SessionLocal
+    db = SessionLocal()
+
+    try:
+        # Get progress record
+        progress = db.query(AnalysisProgress).filter(AnalysisProgress.id == progress_id).first()
+        if not progress:
+            return
+
+        # Update status to running
+        progress.status = "running"
+        progress.current_step = "分析を開始しています..."
+        progress.progress_percentage = 0
+        db.commit()
+
+        # Set up progress callback
+        def update_progress(step: str, percentage: int):
+            progress.current_step = step
+            progress.progress_percentage = percentage
+            db.commit()
+
+        seo_analyzer.set_progress_callback(update_progress)
+
+        # Run SEO analysis
+        analysis_result = seo_analyzer.analyze_site(site_url)
+
+        if "error" in analysis_result:
+            progress.status = "failed"
+            progress.error_message = analysis_result["error"]
+            progress.progress_percentage = 0
+            db.commit()
+            return
+
+        # Get PageSpeed scores
+        progress.current_step = "PageSpeed分析を実行中..."
+        progress.progress_percentage = 95
+        db.commit()
+
+        pagespeed_data = pagespeed_service.get_mobile_and_desktop_scores(site_url)
+
+        # Create analysis record
+        site = db.query(Site).filter(Site.id == site_id).first()
+        new_analysis = Analysis(
+            site_id=site.id,
+            total_score=analysis_result["total_score"],
+            raw_total_score=analysis_result.get("raw_total_score"),
+            is_capped=analysis_result.get("is_capped", False),
+            technical_score=analysis_result["technical_score"],
+            content_score=analysis_result["content_score"],
+            user_experience_score=analysis_result["user_experience_score"],
+            authority_score=analysis_result["authority_score"],
+            score_breakdown=analysis_result.get("score_breakdown"),
+            pagespeed_mobile_score=pagespeed_data.get("mobile", {}).get("performance_score"),
+            pagespeed_desktop_score=pagespeed_data.get("desktop", {}).get("performance_score"),
+            largest_contentful_paint=pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("largest_contentful_paint"),
+            first_input_delay=pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("first_input_delay"),
+            cumulative_layout_shift=pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("cumulative_layout_shift"),
+            has_ssl=analysis_result.get("technical_details", {}).get("has_ssl", False),
+            has_robots_txt=True,
+            has_sitemap=True,
+            mobile_friendly=analysis_result.get("ux_details", {}).get("mobile_friendly", False),
+            meta_title=analysis_result.get("content_details", {}).get("meta_title"),
+            meta_description=analysis_result.get("content_details", {}).get("meta_description"),
+            h1_count=analysis_result.get("content_details", {}).get("h1_count", 0),
+            word_count=analysis_result.get("content_details", {}).get("word_count", 0),
+            detailed_results={
+                "technical": analysis_result.get("technical_details"),
+                "content": analysis_result.get("content_details"),
+                "ux": analysis_result.get("ux_details"),
+                "pagespeed": pagespeed_data
+            },
+            llm_technical_analysis=analysis_result.get("llm_technical_analysis"),
+            llm_content_analysis=analysis_result.get("llm_content_analysis"),
+            llm_ux_analysis=analysis_result.get("llm_ux_analysis"),
+            llm_authority_analysis=analysis_result.get("llm_authority_analysis"),
+            llm_action_plan=analysis_result.get("llm_action_plan")
+        )
+
+        db.add(new_analysis)
+
+        # Update site's latest score and last analyzed time
+        site.latest_score = analysis_result["total_score"]
+        site.last_analyzed_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(new_analysis)
+
+        # Update progress to completed
+        progress.status = "completed"
+        progress.analysis_id = new_analysis.id
+        progress.current_step = "分析が完了しました"
+        progress.progress_percentage = 100
+        progress.completed_at = datetime.utcnow()
+        db.commit()
+
+    except Exception as e:
+        print(f"Analysis error: {str(e)}")
+        progress = db.query(AnalysisProgress).filter(AnalysisProgress.id == progress_id).first()
+        if progress:
+            progress.status = "failed"
+            progress.error_message = str(e)
+            db.commit()
+    finally:
+        db.close()
+
+
+@router.post("/{site_id}", response_model=ProgressResponse)
 async def run_analysis(
     site_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """Run SEO analysis on a site"""
+    """Start SEO analysis on a site (runs in background)"""
 
     # Get site
     site = db.query(Site).filter(Site.id == site_id).first()
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
 
-    # Run SEO analysis
-    analysis_result = seo_analyzer.analyze_site(site.url)
-
-    if "error" in analysis_result:
-        raise HTTPException(status_code=400, detail=analysis_result["error"])
-
-    # Get PageSpeed scores (this can be slow, so could be backgrounded)
-    pagespeed_data = pagespeed_service.get_mobile_and_desktop_scores(site.url)
-
-    # Create analysis record
-    new_analysis = Analysis(
+    # Create progress record
+    progress = AnalysisProgress(
         site_id=site.id,
-        total_score=analysis_result["total_score"],
-        raw_total_score=analysis_result.get("raw_total_score"),
-        is_capped=analysis_result.get("is_capped", False),
-        technical_score=analysis_result["technical_score"],
-        content_score=analysis_result["content_score"],
-        user_experience_score=analysis_result["user_experience_score"],
-        authority_score=analysis_result["authority_score"],
-        score_breakdown=analysis_result.get("score_breakdown"),
-        pagespeed_mobile_score=pagespeed_data.get("mobile", {}).get("performance_score"),
-        pagespeed_desktop_score=pagespeed_data.get("desktop", {}).get("performance_score"),
-        largest_contentful_paint=pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("largest_contentful_paint"),
-        first_input_delay=pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("first_input_delay"),
-        cumulative_layout_shift=pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("cumulative_layout_shift"),
-        has_ssl=analysis_result.get("technical_details", {}).get("has_ssl", False),
-        has_robots_txt=True,  # Would need to check
-        has_sitemap=True,  # Would need to check
-        mobile_friendly=analysis_result.get("ux_details", {}).get("mobile_friendly", False),
-        meta_title=analysis_result.get("content_details", {}).get("meta_title"),
-        meta_description=analysis_result.get("content_details", {}).get("meta_description"),
-        h1_count=analysis_result.get("content_details", {}).get("h1_count", 0),
-        word_count=analysis_result.get("content_details", {}).get("word_count", 0),
-        detailed_results={
-            "technical": analysis_result.get("technical_details"),
-            "content": analysis_result.get("content_details"),
-            "ux": analysis_result.get("ux_details"),
-            "pagespeed": pagespeed_data
-        },
-        # Store LLM analysis results
-        llm_technical_analysis=analysis_result.get("llm_technical_analysis"),
-        llm_content_analysis=analysis_result.get("llm_content_analysis"),
-        llm_ux_analysis=analysis_result.get("llm_ux_analysis"),
-        llm_authority_analysis=analysis_result.get("llm_authority_analysis"),
-        llm_action_plan=analysis_result.get("llm_action_plan")
+        status="pending",
+        progress_percentage=0,
+        steps_completed=[]
     )
-
-    db.add(new_analysis)
-
-    # Update site's latest score and last analyzed time
-    site.latest_score = analysis_result["total_score"]
-    site.last_analyzed_at = datetime.utcnow()
-
+    db.add(progress)
     db.commit()
-    db.refresh(new_analysis)
+    db.refresh(progress)
 
-    return {
-        "message": "Analysis completed successfully",
-        "analysis_id": new_analysis.id,
-        "total_score": new_analysis.total_score
-    }
+    # Start analysis in background thread
+    thread = threading.Thread(
+        target=run_analysis_in_thread,
+        args=(site.id, site.url, progress.id)
+    )
+    thread.daemon = True
+    thread.start()
+
+    return progress
+
+
+@router.get("/{site_id}/progress", response_model=ProgressResponse)
+async def get_analysis_progress(site_id: int, db: Session = Depends(get_db)):
+    """Get the progress of the latest analysis for a site"""
+
+    progress = db.query(AnalysisProgress).filter(
+        AnalysisProgress.site_id == site_id
+    ).order_by(AnalysisProgress.created_at.desc()).first()
+
+    if not progress:
+        raise HTTPException(status_code=404, detail="No analysis in progress")
+
+    return progress
 
 
 @router.get("/{site_id}/latest", response_model=DetailedAnalysisResponse)
@@ -155,7 +251,6 @@ async def get_latest_analysis(site_id: int, db: Session = Depends(get_db)):
             "cls": latest_analysis.cumulative_layout_shift
         },
         recommendations=recommendations,
-        # Include LLM analysis results
         llm_technical_analysis=latest_analysis.llm_technical_analysis,
         llm_content_analysis=latest_analysis.llm_content_analysis,
         llm_ux_analysis=latest_analysis.llm_ux_analysis,

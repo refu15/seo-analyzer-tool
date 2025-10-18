@@ -115,6 +115,34 @@ class Keyword(Base):
     site = relationship("Site", back_populates="keywords")
 
 
+class AnalysisProgress(Base):
+    """Analysis Progress model - tracks real-time analysis progress"""
+    __tablename__ = "analysis_progress"
+
+    id = Column(Integer, primary_key=True, index=True)
+    site_id = Column(Integer, ForeignKey('sites.id'), index=True, nullable=False)
+
+    # Progress tracking
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    current_step = Column(String, nullable=True)
+    progress_percentage = Column(Integer, default=0)
+
+    # Steps completed
+    steps_completed = Column(JSON, nullable=True)  # List of completed steps
+    total_steps = Column(Integer, default=8)
+
+    # Results (when completed)
+    analysis_id = Column(Integer, ForeignKey('analyses.id'), nullable=True)
+
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+
 class Recommendation(Base):
     """Recommendation model - AI-generated improvement suggestions"""
     __tablename__ = "recommendations"

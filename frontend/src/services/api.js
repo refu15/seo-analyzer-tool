@@ -20,6 +20,7 @@ export const sitesApi = {
 // Analysis API
 export const analysisApi = {
   runAnalysis: (siteId) => api.post(`/api/v1/analysis/${siteId}`),
+  getProgress: (siteId) => api.get(`/api/v1/analysis/${siteId}/progress`),
   getLatest: (siteId) => api.get(`/api/v1/analysis/${siteId}/latest`),
   getHistory: (siteId, limit = 10) => api.get(`/api/v1/analysis/${siteId}/history?limit=${limit}`),
 };
