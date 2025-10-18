@@ -15,18 +15,29 @@ app = FastAPI(
 )
 
 # Configure CORS
-# Get allowed origins from settings
 import os
-print(f"DEBUG: Environment variable ALLOWED_ORIGINS = {os.getenv('ALLOWED_ORIGINS')}")  # Debug log
+import sys
+
+# Force flush output for Railway logs
+def log(msg):
+    print(msg, flush=True)
+    sys.stdout.flush()
+
+log("=" * 80)
+log("SEO Analyzer Tool - Starting up")
+log("=" * 80)
+log(f"Environment variable ALLOWED_ORIGINS = {os.getenv('ALLOWED_ORIGINS', 'NOT SET')}")
+log(f"Environment variable GEMINI_API_KEY = {'SET' if os.getenv('GEMINI_API_KEY') else 'NOT SET'}")
+log(f"Environment variable DEBUG = {os.getenv('DEBUG', 'NOT SET')}")
 
 allowed_origins = settings.get_allowed_origins()
-print(f"DEBUG: Allowed origins: {allowed_origins}")  # Debug log
+log(f"Parsed allowed origins: {allowed_origins}")
 
 # If no specific origins are configured, allow all in development
 # In production, you should set ALLOWED_ORIGINS environment variable
 if not allowed_origins or allowed_origins == ['']:
     allowed_origins = ["*"]
-    print("WARNING: Using wildcard CORS. Set ALLOWED_ORIGINS environment variable in production.")
+    log("WARNING: Using wildcard CORS. Set ALLOWED_ORIGINS environment variable in production.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,3 +68,17 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get("/debug/env")
+async def debug_env():
+    """Debug endpoint to check environment variables (REMOVE IN PRODUCTION)"""
+    import os
+    return {
+        "allowed_origins": settings.get_allowed_origins(),
+        "allowed_origins_raw": os.getenv("ALLOWED_ORIGINS", "NOT SET"),
+        "has_gemini_key": bool(os.getenv("GEMINI_API_KEY")),
+        "has_pagespeed_key": bool(os.getenv("PAGESPEED_API_KEY")),
+        "debug_mode": settings.DEBUG,
+        "app_version": settings.APP_VERSION,
+    }
