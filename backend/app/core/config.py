@@ -42,8 +42,15 @@ class Settings(BaseSettings):
         # Force read from environment variable
         origins = os.getenv("ALLOWED_ORIGINS", self.ALLOWED_ORIGINS)
         if isinstance(origins, str) and origins:
-            # Filter out empty strings and strip whitespace
-            return [origin.strip() for origin in origins.split(',') if origin.strip()]
+            # Filter out empty strings, strip whitespace, and remove trailing slashes
+            parsed = []
+            for origin in origins.split(','):
+                origin = origin.strip()
+                if origin:
+                    # Remove trailing slash
+                    origin = origin.rstrip('/')
+                    parsed.append(origin)
+            return parsed
         return []
 
 
