@@ -17,6 +17,11 @@ export default function SiteDetail() {
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState(null)
 
+  // Debug: Log analyzing state changes
+  useEffect(() => {
+    console.log('Analyzing state changed:', analyzing)
+  }, [analyzing])
+
   useEffect(() => {
     fetchSiteData()
   }, [siteId])
@@ -43,15 +48,17 @@ export default function SiteDetail() {
   }
 
   const handleRunAnalysis = async () => {
+    console.log('Starting analysis for site:', siteId)
     setAnalyzing(true)
     setError(null)
 
     try {
-      await analysisApi.runAnalysis(siteId)
+      const response = await analysisApi.runAnalysis(siteId)
+      console.log('Analysis started, progress response:', response.data)
       // Progress component will handle the rest
     } catch (err) {
+      console.error('Failed to start analysis:', err)
       setError(err.response?.data?.detail || '分析の開始に失敗しました')
-      console.error(err)
       setAnalyzing(false)
     }
   }
