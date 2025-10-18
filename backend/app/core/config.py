@@ -34,14 +34,17 @@ class Settings(BaseSettings):
 
     class Config:
         case_sensitive = True
+        env_file = ".env"
+        env_file_encoding = 'utf-8'
 
     def get_allowed_origins(self) -> List[str]:
         """Parse ALLOWED_ORIGINS into a list"""
         # Force read from environment variable
         origins = os.getenv("ALLOWED_ORIGINS", self.ALLOWED_ORIGINS)
-        if isinstance(origins, str):
-            return [origin.strip() for origin in origins.split(',')]
-        return origins
+        if isinstance(origins, str) and origins:
+            # Filter out empty strings and strip whitespace
+            return [origin.strip() for origin in origins.split(',') if origin.strip()]
+        return []
 
 
 settings = Settings()

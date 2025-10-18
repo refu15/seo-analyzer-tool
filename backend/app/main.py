@@ -18,18 +18,24 @@ app = FastAPI(
 # Get allowed origins from settings
 import os
 print(f"DEBUG: Environment variable ALLOWED_ORIGINS = {os.getenv('ALLOWED_ORIGINS')}")  # Debug log
-print(f"DEBUG: All environment variables: {list(os.environ.keys())}")  # Show all env vars
 
 allowed_origins = settings.get_allowed_origins()
 print(f"DEBUG: Allowed origins: {allowed_origins}")  # Debug log
 
+# If no specific origins are configured, allow all in development
+# In production, you should set ALLOWED_ORIGINS environment variable
+if not allowed_origins or allowed_origins == ['']:
+    allowed_origins = ["*"]
+    print("WARNING: Using wildcard CORS. Set ALLOWED_ORIGINS environment variable in production.")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=True if allowed_origins != ["*"] else False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     expose_headers=["*"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Include routers
