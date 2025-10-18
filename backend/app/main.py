@@ -3,6 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from .core.config import settings
 from .core.database import engine, Base
 from .api import sites, analysis
+import os
+
+# Suppress gRPC ALTS warnings (harmless when not running on GCP)
+os.environ.setdefault('GRPC_VERBOSITY', 'ERROR')
+os.environ.setdefault('GLOG_minloglevel', '2')
 
 # Create database tables
 Base.metadata.create_all(bind=engine)

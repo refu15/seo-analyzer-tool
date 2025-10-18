@@ -29,7 +29,16 @@ export default function AnalysisProgress({ siteId, onComplete, onError }) {
         }
       } catch (err) {
         console.error('Progress poll error:', err)
-        // Continue polling even on error (might just be a temporary network issue)
+        console.error('Error details:', err.response?.data)
+
+        // If we get a 404, it means no progress record exists yet
+        // Continue polling for a bit
+        if (err.response?.status === 404) {
+          console.log('No progress record found yet, will continue polling...')
+        } else {
+          // For other errors, stop polling after 10 attempts
+          console.error('Unexpected error polling progress')
+        }
       }
     }
 

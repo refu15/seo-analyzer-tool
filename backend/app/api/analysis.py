@@ -72,10 +72,15 @@ def run_analysis_in_thread(site_id: int, site_url: str, progress_id: int):
     db = SessionLocal()
 
     try:
+        print(f"Starting analysis thread for site {site_id}, progress {progress_id}", flush=True)
+
         # Get progress record
         progress = db.query(AnalysisProgress).filter(AnalysisProgress.id == progress_id).first()
         if not progress:
+            print(f"ERROR: Progress record {progress_id} not found!", flush=True)
             return
+
+        print(f"Progress record found, starting analysis...", flush=True)
 
         # Update status to running
         progress.status = "running"
@@ -164,7 +169,10 @@ def run_analysis_in_thread(site_id: int, site_url: str, progress_id: int):
         db.commit()
 
     except Exception as e:
-        print(f"Analysis error: {str(e)}")
+        print(f"Analysis error: {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
+
         progress = db.query(AnalysisProgress).filter(AnalysisProgress.id == progress_id).first()
         if progress:
             progress.status = "failed"
@@ -180,11 +188,15 @@ async def run_analysis(
     db: Session = Depends(get_db)
 ):
     """Start SEO analysis on a site (runs in background)"""
+    print(f"Analysis requested for site {site_id}", flush=True)
 
     # Get site
     site = db.query(Site).filter(Site.id == site_id).first()
     if not site:
+        print(f"Site {site_id} not found!", flush=True)
         raise HTTPException(status_code=404, detail="Site not found")
+
+    print(f"Site found: {site.url}", flush=True)
 
     # Create progress record
     progress = AnalysisProgress(
@@ -197,6 +209,8 @@ async def run_analysis(
     db.commit()
     db.refresh(progress)
 
+    print(f"Progress record created with ID {progress.id}", flush=True)
+
     # Start analysis in background thread
     thread = threading.Thread(
         target=run_analysis_in_thread,
@@ -204,6 +218,8 @@ async def run_analysis(
     )
     thread.daemon = True
     thread.start()
+
+    print(f"Background thread started", flush=True)
 
     return progress
 
